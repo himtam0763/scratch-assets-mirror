@@ -1,0 +1,34 @@
+name: fetch-assets
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all scratch library assets
+        run: |
+          mkdir -p libs assets
+          for f in sprites sounds costumes backdrops; do
+            curl -sL --retry 3 -o libs/$f.json \
+              "https://cdn.jsdelivr.net/gh/scratchfoundation/scratch-gui@develop/src/lib/libraries/$f.json"
+            echo "$f.json: $(wc -c < libs/$f.json) bytes"
+          done
+          grep -hoE '[a-f0-9]{32}\.[a-z0-9]{2,5}' libs/*.json | sort -u > list.txt
+          echo "共 $(wc -l < list.txt) 个素材"
+          cat list.txt | xargs -P 16 -I{} sh -c \
+            'curl -s --retry 3 --max-time 60 -o "assets/{}" "https://assets.scratch.mit.edu/internalapi/asset/{}/get/"'
+          find assets -maxdepth 1 -size 0 -delete
+          echo "成功下载: $(ls assets | wc -l) 个 / 清单 $(wc -l < list.txt) 个"
+          du -sh assets
+
+      - name: Commit assets to repo
+        run: |
+          git config user.name "assets-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add assets
+          git commit -m "add scratch library assets" || echo "nothing to commit"
+          git push
